@@ -13,6 +13,9 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  APP_DIR: _src/LumiVault
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,6 +24,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          mkdir -p _src
+          unzip -q LumiVault-GitHub-ready.zip -d _src
+          ls -la ${{ env.APP_DIR }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -32,15 +41,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+          build-root-directory: ${{ env.APP_DIR }}
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        working-directory: ${{ env.APP_DIR }}
+        run: gradle assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: LumiVault-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.APP_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload build reports (if failed)
@@ -48,6 +59,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-reports
-          path: |
-            app/build/reports/
-            app/build/outputs/logs/
+          path: ${{ env.APP_DIR }}/app/build/reports/
