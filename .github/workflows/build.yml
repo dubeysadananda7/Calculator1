@@ -1,4 +1,4 @@
-name: Build LumiVault APK
+name: Build APK
 
 on:
   push:
@@ -13,9 +13,6 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  APP_DIR: _src/LumiVault
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,11 +22,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Find Gradle project (folder or any zip)
+        shell: bash
         run: |
-          mkdir -p _src
-          unzip -q LumiVault-GitHub-ready.zip -d _src
-          ls -la ${{ env.APP_DIR }}
+          set -e
+
+          find_settings() {
+            find . \( -path ./.git -o -path ./node_modules \) -prune -o \
+              -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print \
+              | awk '{ print length($0) " " $0 }' | sort -n | head -n 1 | cut -d' ' -f2-
+          }
+
+          SETTINGS="$(find_settings)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "No Gradle project in repo files. Looking inside zip files..."
+            mkdir -p _src
+            while IFS= read -r -d '' z; do
+              if unzip -l "$z" | grep -Eq 'settings\.gradle(\.kts)?$'; then
+                echo "Using zip: $z"
+                unzip -q -o "$z" -d _src
+                break
+              fi
+            done < <(find . -path ./.git -prune -o -path ./_src -prune -o -type f -iname '*.zip' -print0)
+            SETTINGS="$(find_settings)"
+          fi
+
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::settings.gradle(.kts) not found in repo or in any zip file."
+            echo "Files in repo:"
+            ls -la
+            exit 1
+          fi
+
+          APP_DIR="$(dirname "$SETTINGS")"
+          echo "Project folder: $APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+          ls -la "$APP_DIR"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -50,8 +79,8 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: LumiVault-debug-apk
-          path: ${{ env.APP_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: debug-apk
+          path: ${{ env.APP_DIR }}/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload build reports (if failed)
@@ -59,4 +88,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-reports
-          path: ${{ env.APP_DIR }}/app/build/reports/
+          path: ${{ env.APP_DIR }}/**/build/reports/
+          if-no-files-found: ignore
